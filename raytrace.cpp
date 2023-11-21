@@ -2,6 +2,10 @@
 #include <sstream>
 #include "raytrace.h"
 
+
+#include "external/glm/glm/glm.hpp"
+//#include "external/glm/glm/gtc/matrix_transform.hpp"
+
 void save_imageP3(int Width, int Height, char* fname,unsigned char* pixels)
 {
     FILE *fp;
@@ -121,27 +125,27 @@ int main(int argc, char *argv[])
     std::cout << "Ambient: " << input_image.ambient_ir << " " << input_image.ambient_ig << " " << input_image.ambient_ib << std::endl;
     std::cout << "Output: " << input_image.output << std::endl;
 
-    //int width = input_image.width;	// Move these to your setup function. The actual resolution will be
-    char fname3[20] = "outputs/sceneP3.ppm"; //This should be set based on the input file
     unsigned char *pixels;
 
     // pixels[0] is the top left of the image and
     // pixels[3*Width*Height-1] is the bottom right of the image.
     pixels = new unsigned char [3*input_image.width*input_image.height];
 
-    // This loop just creates a gradient for illustration purposes only. You will not use it.
-    float scale = 128.0 / (float) input_image.width ;
+    // TODO - This loop just creates a gradient for illustration purposes only
+    float scale = (float) 128 / (float) input_image.width ;
     int k = 0 ;
     for(int i = 0; i < input_image.height; i++) {
         std::clog << "\rScanlines remaining: " << (input_image.width - i) << ' ' << std::flush;
         for (int j = 0; j < input_image.width; j++) {
-            int c = (i+j)*scale ;
-            pixels[k] = c;
-            pixels[k+1] = c;
-            pixels[k+2] = c;
+            float c = (float(i)+float(j))*scale ;
+            glm::vec3 grad_color = glm::vec3(c, c, c);
+            pixels[k] = (unsigned char) grad_color.r;
+            pixels[k+1] = (unsigned char) grad_color.g;
+            pixels[k+2] = (unsigned char) grad_color.b;
             k = k + 3 ;
         }
     }
+
     // TODO this is kinda a strange way to do this, trying to use c style strings
     std::string filename = "outputs/" + input_image.output;
     save_imageP3(input_image.width, input_image.height, &filename[0], pixels);
