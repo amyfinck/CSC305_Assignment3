@@ -10,6 +10,8 @@
 #include <cmath>
 #include <cstdlib>
 
+#define MAX_DEPTH 5
+
 void save_imageP6(int Width, int Height, char* fname,unsigned char* pixels);
 
 struct Sphere

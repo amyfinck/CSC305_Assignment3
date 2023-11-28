@@ -110,12 +110,90 @@ void getImageInfo(const std::string& file_name, ImageInfo& input_image)
     inputFile.close();
 }
 
-glm::vec3 ray_color(const ray& r)
+// returns the t value of the closest intersection, or -1 if there is no intersection
+float closestIntersection(Ray& r, const ImageInfo& inputImage)
 {
-    glm::vec3 unit_direction = r.direction() / glm::length(r.direction());
-    float a = 0.5f *(unit_direction.y + 1.0);
-    glm::vec3 retval =  (1.0f-a)*glm::vec3(1.0, 1.0, 1.0) + a*glm::vec3(0.5, 0.7, 1.0);
-    return retval;
+    glm::vec3 S = r.get_origin();
+    glm::vec3 c = r.get_direction();
+
+    float A = glm::dot(c, c);
+    float B = glm::dot(c, S);
+    float C = glm::dot(S, S) - 1;
+
+    float discriminant = B*B - A*C;
+
+    if(discriminant < 0)
+    {
+        // no intersection
+        return -1;
+    }
+    else
+    {
+        float t1 = (-B + sqrt(discriminant)) / (2*A);
+        float t2 = (-B - sqrt(discriminant)) / (2*A);
+        float t = std::min(t1, t2);
+        return t;
+    }
+}
+
+
+/*
+ * function raytrace(r)
+ *      if (ray.depth() > MAX_DEPTH) return black
+ *      P = closest intersection of ray with all objects
+ *      if( no intersection )
+ *          return backgroundColor
+ *      clocal = Sum(shadowRays(P,Lighti))
+ *      cre = raytrace(rre)
+ *      return (clocal+kre*cre+kra*cra)
+ *   end
+ */
+glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage)
+{
+    if( r.get_depth() > MAX_DEPTH)
+    {
+        // return black
+        return glm::vec3(0, 0, 0);
+    }
+    float closest_intersection_t = closestIntersection(r, inputImage);
+    if( closest_intersection_t < 0)
+    {
+        // no intersection
+        return glm::vec3(inputImage.back_r, inputImage.back_g, inputImage.back_b);
+    }
+
+    // Intersects at this point
+    glm::vec3 P = r.at(closest_intersection_t);
+
+    // TODO here we are assuming sphere 1 because we are hardcoding.
+    // Ka * Ia[c] * O[c]
+    glm::vec3 c_local = glm::vec3(inputImage.spheres[0].ka * inputImage.ambient_ir * inputImage.spheres[0].r,
+                                  inputImage.spheres[0].ka * inputImage.ambient_ig * inputImage.spheres[0].g,
+                                  inputImage.spheres[0].ka * inputImage.ambient_ib * inputImage.spheres[0].b);
+
+    for(int i = 0; i < inputImage.lights.size(); i++)
+    {
+        Light light = inputImage.lights[i];
+
+        glm::vec3 N = glm::normalize(P);
+        glm::vec3 L = glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - P);
+        glm::vec3 V = glm::normalize(r.get_origin() - P);
+        glm::vec3 R = glm::normalize(2 * glm::dot(N, L) * N - L);
+
+        // diffuse - Kd * Ip[c] * (N dot L) *O[c]
+        glm::vec3 diffuse = glm::vec3(inputImage.spheres[0].kd * light.ir * glm::dot(N, L) * inputImage.spheres[0].r,
+                            inputImage.spheres[0].kd * light.ig * inputImage.spheres[0].g * glm::dot(N, L),
+                            inputImage.spheres[0].kd * light.ib * inputImage.spheres[0].b * glm::dot(N, L));
+
+        // specular - Ks*Ip[c]*(R dot V)n
+        glm::vec3 specular = glm::vec3(inputImage.spheres[0].ks * light.ir * glm::pow(glm::dot(R, V), inputImage.spheres[0].n),
+                             inputImage.spheres[0].ks * light.ig * inputImage.spheres[0].g * glm::pow(glm::dot(R, V), inputImage.spheres[0].n),
+                             inputImage.spheres[0].ks * light.ib * inputImage.spheres[0].b * glm::pow(glm::dot(R, V), inputImage.spheres[0].n));
+
+        c_local += diffuse + specular;
+    }
+
+    return c_local;
 }
 
 int main(int argc, char *argv[])
@@ -140,20 +218,16 @@ int main(int argc, char *argv[])
     Sphere testSphere = input_image.spheres[0];
 
     // TODO what if these are odd?
-    float H = float(input_image.width) / 2;
-    float W = float(input_image.height) / 2;
+    float H = 1;
+    float W = 1;
     int nCols = input_image.width;
     int nRows = input_image.height;
-    glm::vec3 eye = glm::vec3(0, 0, 0);
+    glm::vec3 eye = glm::vec3(0, 0, -10);
 
     // Calculate the vectors across the horizontal and down the vertical viewport edges.
     glm::vec3 u = glm::vec3(1, 0, 0);
     glm::vec3 v = glm::vec3(0, 1, 0);
     glm::vec3 n = glm::vec3(0, 0, -1);
-
-    // Calculate the location of the upper left pixel.
-    //int pixel00_u = - W + W * (2 * 0/ nCols);
-    //int pixel00_v = - W + W * (2 * (nRows - 1) / nRows);
 
     glm::vec3 upper_left_vector = eye + glm::vec3(0, 0, -N) - float(W)*u + float(H)*v;
 
@@ -171,19 +245,13 @@ int main(int argc, char *argv[])
             // TODO textbook also gives this in camera coordinates, what should I use???
             glm::vec3 ray_direction = P_pixel_camera - eye;
 
-            if(k % 10 == 0) {
-                std::cout << "pixel_u_c: " << pixel_u_c << std::endl;
-                std::cout << "pixel_v_r: " << pixel_v_r << std::endl;
-                std::cout << "ray_direction: " << ray_direction.x << ", " << ray_direction.y << ", " << ray_direction.z << std::endl;
-            }
+            Ray myRay = Ray(eye, ray_direction, 1);
 
-            //ray myRay = ray(camera_center, ray_direction);
+            glm::vec3 color = raytrace(myRay, input_image);
 
-            //glm::vec3 color = ray_color(myRay);
-
-            pixels[k] = (unsigned char) ((pixel_u_c + W) / (2 * W) * 255);
-            pixels[k+1] = (unsigned char) ((pixel_v_r + H) / (2 * H) * 255);
-            pixels[k+2] = (unsigned char) 0;
+            pixels[k] = (unsigned char) (color.r * 255);
+            pixels[k+1] = (unsigned char) (color.g * 255);
+            pixels[k+2] = (unsigned char) (color.b * 255);
             k = k + 3 ;
         }
     }

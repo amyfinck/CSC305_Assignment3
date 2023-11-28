@@ -4,28 +4,45 @@
 // TODO is this the best way to include this?
 #include "external/glm/glm/glm.hpp"
 
-class ray
+class Ray
 {
-public:
-    // empty construcor
-    ray() {}
+    public:
+        Ray(const glm::vec3& o, const glm::vec3& dir, int dep)
+        {
+            origin = o;
+            direction = dir;
+            depth = dep;
+        }
 
-    // origin is staring point, direction is vector of location
-    ray(const glm::vec3& origin, const glm::vec3& direction) : orig(origin), dir(direction) {}
+        glm::vec3 get_origin() const
+        {
+            return origin;
+        }
 
-    glm::vec3 origin() const  { return orig; }
-    glm::vec3 direction() const { return dir; }
+        glm::vec3 get_direction() const
+        {
+            return direction;
+        }
 
-    // inputs traversal length and outputs new ray position
-    glm::vec3 at(float t) const
-    {
-        return orig + t * dir;
-    }
+        int get_depth()
+        {
+            return depth;
+        }
 
-private:
-    glm::vec3 orig;
-    glm::vec3 dir;
+        void set_depth(int dep)
+        {
+            depth = dep;
+        }
+
+        glm::vec3 at(float t) const
+        {
+            return origin + t * direction;
+        }
+
+    private:
+        glm::vec3 origin;
+        glm::vec3 direction;
+        int depth;
 };
-
 
 #endif //ASSIGNMENT3_RAY_H
