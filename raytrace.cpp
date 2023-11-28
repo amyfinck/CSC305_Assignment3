@@ -85,6 +85,7 @@ void getImageInfo(const std::string& file_name, ImageInfo& input_image)
                       >> sphere.scaleX >> sphere.scaleY >> sphere.scaleZ
                       >> sphere.r >> sphere.g >> sphere.b
                       >> sphere.ka >> sphere.kd >> sphere.ks >> sphere.kr >> sphere.n;
+            sphere.initDefaults();
             input_image.spheres.push_back(sphere);
         }
         if(keyword == "LIGHT")
@@ -110,32 +111,67 @@ void getImageInfo(const std::string& file_name, ImageInfo& input_image)
     inputFile.close();
 }
 
+glm::mat4 inverseTranslate(float x, float y, float z)
+{
+    glm::mat4 inverseTranslateMatrix = glm::mat4(0);
+    inverseTranslateMatrix[0][0] = 1;
+    inverseTranslateMatrix[1][1] = 1;
+    inverseTranslateMatrix[2][2] = 1;
+    inverseTranslateMatrix[3][3] = 1;
+    inverseTranslateMatrix[3][0] = -x;
+    inverseTranslateMatrix[3][1] = -y;
+    inverseTranslateMatrix[3][2] = -z;
+
+    return inverseTranslateMatrix;
+}
+
+glm::mat4 inverseScale(float x, float y, float z)
+{
+    glm::mat4 inverseScaleMatrix = glm::mat4(0);
+    inverseScaleMatrix[0][0] = 1 / x;
+    inverseScaleMatrix[1][1] = 1 / y;
+    inverseScaleMatrix[2][2] = 1 / z;
+    inverseScaleMatrix[3][3] = 1;
+
+    return inverseScaleMatrix;
+}
+
 // returns the t value of the closest intersection, or -1 if there is no intersection
 float closestIntersection(Ray& r, const ImageInfo& inputImage)
 {
     glm::vec3 S = r.get_origin();
     glm::vec3 c = r.get_direction();
 
-    float A = glm::dot(c, c);
-    float B = glm::dot(c, S);
-    float C = glm::dot(S, S) - 1;
+    float t = -1;
 
-    float discriminant = B*B - A*C;
+    for(int i = 0; i < inputImage.spheres.size(); i++)
+    {
+        Sphere sphere = inputImage.spheres[i];
+        glm::vec4 S_homo = glm::vec4(r.get_origin(), 1);
+        glm::vec4 c_homo = glm::vec4(r.get_direction(), 0);
 
-    if(discriminant < 0)
-    {
-        // no intersection
-        return -1;
+        glm::mat4 inverse_translate = inverseTranslate(sphere.posX, sphere.posY, sphere.posZ);
+        glm::mat4 inverse_scale = inverseScale(sphere.scaleX, sphere.scaleY, sphere.scaleZ);
+        glm::vec4 S_t_homo = inverse_scale * inverse_translate * S_homo;
+        glm::vec4 c_t_homo = inverse_scale * inverse_translate * c_homo;
+        glm::vec3 S_t = glm::vec3(S_t_homo.x, S_t_homo.y, S_t_homo.z);
+        glm::vec3 c_t = glm::vec3(c_t_homo.x, c_t_homo.y, c_t_homo.z);
+
+        float A = glm::dot(c_t, c_t);
+        float B = glm::dot(c_t, S_t);
+        float C = glm::dot(S_t, S_t) - 1;
+
+        float discriminant = B * B - A * C;
+
+        if (discriminant > 0)
+        {
+            float t1 = (-B + sqrt(discriminant)) / (2 * A);
+            float t2 = (-B - sqrt(discriminant)) / (2 * A);
+            t = std::min(t1, t2);
+        }
     }
-    else
-    {
-        float t1 = (-B + sqrt(discriminant)) / (2*A);
-        float t2 = (-B - sqrt(discriminant)) / (2*A);
-        float t = std::min(t1, t2);
-        return t;
-    }
+    return t;
 }
-
 
 /*
  * function raytrace(r)
@@ -155,6 +191,7 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage)
         // return black
         return glm::vec3(0, 0, 0);
     }
+
     float closest_intersection_t = closestIntersection(r, inputImage);
     if( closest_intersection_t < 0)
     {
@@ -166,7 +203,7 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage)
     glm::vec3 P = r.at(closest_intersection_t);
 
     // TODO here we are assuming sphere 1 because we are hardcoding.
-    // Ka * Ia[c] * O[c]
+    // ambient - Ka * Ia[c] * O[c]
     glm::vec3 c_local = glm::vec3(inputImage.spheres[0].ka * inputImage.ambient_ir * inputImage.spheres[0].r,
                                   inputImage.spheres[0].ka * inputImage.ambient_ig * inputImage.spheres[0].g,
                                   inputImage.spheres[0].ka * inputImage.ambient_ib * inputImage.spheres[0].b);
@@ -175,6 +212,7 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage)
     {
         Light light = inputImage.lights[i];
 
+        // TODO think about these
         glm::vec3 N = glm::normalize(P);
         glm::vec3 L = glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - P);
         glm::vec3 V = glm::normalize(r.get_origin() - P);
@@ -212,22 +250,21 @@ int main(int argc, char *argv[])
     unsigned char *pixels;
     pixels = new unsigned char [3*input_image.width*input_image.height];
 
-    // N distance from camera
-    float N = 1.0f;
-
-    Sphere testSphere = input_image.spheres[0];
+    // N distance from camer
 
     // TODO what if these are odd?
     float H = 1;
     float W = 1;
+    float N = 1;
+
     int nCols = input_image.width;
     int nRows = input_image.height;
-    glm::vec3 eye = glm::vec3(0, 0, -10);
+    glm::vec3 eye = glm::vec3(0, 0, 0);
 
     // Calculate the vectors across the horizontal and down the vertical viewport edges.
     glm::vec3 u = glm::vec3(1, 0, 0);
     glm::vec3 v = glm::vec3(0, 1, 0);
-    glm::vec3 n = glm::vec3(0, 0, -1);
+    glm::vec3 n = glm::vec3(0, 0, 1);
 
     glm::vec3 upper_left_vector = eye + glm::vec3(0, 0, -N) - float(W)*u + float(H)*v;
 
@@ -242,8 +279,8 @@ int main(int argc, char *argv[])
             glm::vec3 P_pixel_camera = glm::vec3(pixel_u_c, pixel_v_r, -N);
             glm::vec3 P_pixel_world = eye - N*n + pixel_u_c*u + pixel_v_r*v;
 
-            // TODO textbook also gives this in camera coordinates, what should I use???
-            glm::vec3 ray_direction = P_pixel_camera - eye;
+            // TODO textbook also gives this in camera coordinates, what should I use
+            glm::vec3 ray_direction = P_pixel_world - eye;
 
             Ray myRay = Ray(eye, ray_direction, 1);
 
