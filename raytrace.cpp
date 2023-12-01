@@ -1,5 +1,6 @@
 #include <fstream>
 #include <sstream>
+#include <tuple>
 #include "raytrace.h"
 #include "ray.h"
 
@@ -137,7 +138,7 @@ glm::mat4 inverseScale(float x, float y, float z)
 }
 
 // returns the t value of the closest intersection, or -1 if there is no intersection
-float closestIntersection(Ray& r, const ImageInfo& inputImage)
+std::pair<float, int> closestIntersection(Ray& r, const ImageInfo& inputImage)
 {
     glm::vec3 S = r.get_origin();
     glm::vec3 c = r.get_direction();
@@ -168,9 +169,10 @@ float closestIntersection(Ray& r, const ImageInfo& inputImage)
             float t1 = (-B + sqrt(discriminant)) / (2 * A);
             float t2 = (-B - sqrt(discriminant)) / (2 * A);
             t = std::min(t1, t2);
+            return std::make_pair(t,i);
         }
     }
-    return t;
+    return std::make_pair(-1, -1);
 }
 
 /*
@@ -184,49 +186,52 @@ float closestIntersection(Ray& r, const ImageInfo& inputImage)
  *      return (clocal+kre*cre+kra*cra)
  *   end
  */
-glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage)
+glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
 {
-    if( r.get_depth() > MAX_DEPTH)
+    if( depth > MAX_DEPTH)
     {
         // return black
-        return glm::vec3(0, 0, 0);
+        return {0, 0, 0};
     }
 
-    float closest_intersection_t = closestIntersection(r, inputImage);
+    float closest_intersection_t;
+    int intersected_sphere;
+    std::tie(closest_intersection_t, intersected_sphere) = closestIntersection(r, inputImage);
     if( closest_intersection_t < 0)
     {
         // no intersection
-        return glm::vec3(inputImage.back_r, inputImage.back_g, inputImage.back_b);
+        return {inputImage.back_r, inputImage.back_g, inputImage.back_b};
     }
 
     // Intersects at this point
     glm::vec3 P = r.at(closest_intersection_t);
 
-    // TODO here we are assuming sphere 1 because we are hardcoding.
     // ambient - Ka * Ia[c] * O[c]
-    glm::vec3 c_local = glm::vec3(inputImage.spheres[0].ka * inputImage.ambient_ir * inputImage.spheres[0].r,
-                                  inputImage.spheres[0].ka * inputImage.ambient_ig * inputImage.spheres[0].g,
-                                  inputImage.spheres[0].ka * inputImage.ambient_ib * inputImage.spheres[0].b);
+    glm::vec3 c_local = glm::vec3(inputImage.spheres[intersected_sphere].ka * inputImage.ambient_ir * inputImage.spheres[intersected_sphere].r,
+                                  inputImage.spheres[intersected_sphere].ka * inputImage.ambient_ig * inputImage.spheres[intersected_sphere].g,
+                                  inputImage.spheres[intersected_sphere].ka * inputImage.ambient_ib * inputImage.spheres[intersected_sphere].b);
 
     for(int i = 0; i < inputImage.lights.size(); i++)
     {
         Light light = inputImage.lights[i];
 
         // TODO think about these
-        glm::vec3 N = glm::normalize(P);
+        glm::vec3 N = glm::normalize(-P);
         glm::vec3 L = glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - P);
-        glm::vec3 V = glm::normalize(r.get_origin() - P);
+        glm::vec3 V = glm::normalize    (P - r.get_origin());
         glm::vec3 R = glm::normalize(2 * glm::dot(N, L) * N - L);
 
-        // diffuse - Kd * Ip[c] * (N dot L) *O[c]
-        glm::vec3 diffuse = glm::vec3(inputImage.spheres[0].kd * light.ir * glm::dot(N, L) * inputImage.spheres[0].r,
-                            inputImage.spheres[0].kd * light.ig * inputImage.spheres[0].g * glm::dot(N, L),
-                            inputImage.spheres[0].kd * light.ib * inputImage.spheres[0].b * glm::dot(N, L));
+        float huh = glm::dot(N, L);
+
+        // diffuse : Kd * Ip[c] * (N dot L) *O[c]
+        glm::vec3 diffuse = glm::vec3(inputImage.spheres[intersected_sphere].kd * light.ir * glm::dot(N, L) * inputImage.spheres[intersected_sphere].r,
+                            inputImage.spheres[intersected_sphere].kd * light.ig * glm::dot(N, L) * inputImage.spheres[intersected_sphere].g ,
+                            inputImage.spheres[intersected_sphere].kd * light.ib * glm::dot(N, L) * inputImage.spheres[intersected_sphere].b );
 
         // specular - Ks*Ip[c]*(R dot V)n
-        glm::vec3 specular = glm::vec3(inputImage.spheres[0].ks * light.ir * glm::pow(glm::dot(R, V), inputImage.spheres[0].n),
-                             inputImage.spheres[0].ks * light.ig * inputImage.spheres[0].g * glm::pow(glm::dot(R, V), inputImage.spheres[0].n),
-                             inputImage.spheres[0].ks * light.ib * inputImage.spheres[0].b * glm::pow(glm::dot(R, V), inputImage.spheres[0].n));
+        glm::vec3 specular = glm::vec3(inputImage.spheres[intersected_sphere].ks * light.ir * glm::pow(glm::dot(R, V), inputImage.spheres[intersected_sphere].n),
+                             inputImage.spheres[intersected_sphere].ks * light.ig * inputImage.spheres[intersected_sphere].g * glm::pow(glm::dot(R, V), inputImage.spheres[intersected_sphere].n),
+                             inputImage.spheres[intersected_sphere].ks * light.ib * inputImage.spheres[intersected_sphere].b * glm::pow(glm::dot(R, V), inputImage.spheres[intersected_sphere].n));
 
         c_local += diffuse + specular;
     }
@@ -284,7 +289,7 @@ int main(int argc, char *argv[])
 
             Ray myRay = Ray(eye, ray_direction, 1);
 
-            glm::vec3 color = raytrace(myRay, input_image);
+            glm::vec3 color = raytrace(myRay, input_image, 1);
 
             pixels[k] = (unsigned char) (color.r * 255);
             pixels[k+1] = (unsigned char) (color.g * 255);
