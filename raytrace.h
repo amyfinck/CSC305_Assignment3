@@ -106,4 +106,13 @@ struct ImageInfo
     std::string output;
 };
 
+struct Intersection
+{
+    float t;
+    glm::vec3 normal;
+    glm::vec3 point;
+    Sphere sphere;
+    int no_intersect_flag;
+};
+
 #endif //ASSIGNMENT3_RAYTRACE_H

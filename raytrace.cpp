@@ -138,7 +138,7 @@ glm::mat4 inverseScale(float x, float y, float z)
 }
 
 // returns the t value of the closest intersection, or -1 if there is no intersection
-std::pair<float, int> closestIntersection(Ray& r, const ImageInfo& inputImage)
+void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &inputImage)
 {
     glm::vec3 S = r.get_origin();
     glm::vec3 c = r.get_direction();
@@ -168,11 +168,22 @@ std::pair<float, int> closestIntersection(Ray& r, const ImageInfo& inputImage)
         {
             float t1 = (-B + sqrt(discriminant)) / (2 * A);
             float t2 = (-B - sqrt(discriminant)) / (2 * A);
-            t = std::min(t1, t2);
-            return std::make_pair(t,i);
+
+            intersection.sphere = inputImage.spheres[i];
+            intersection.t = std::min(t1, t2);
+
+            intersection.no_intersect_flag = 0;
+            intersection.point = r.at(intersection.t);
+
+            glm::vec3 normal = intersection.point - glm::vec3(intersection.sphere.posX, intersection.sphere.posY, intersection.sphere.posZ);
+            glm::vec4 normal_homo = glm::transpose(inverse_scale * inverse_translate) * glm::vec4(normal, 0);
+            intersection.normal = glm::vec3(normal_homo.x, normal_homo.y, normal_homo.z);
+
+            return;
         }
     }
-    return std::make_pair(-1, -1);
+    // TODO is this good practice? Only setting this flag, and trusting the other function to not access the other members
+    intersection.no_intersect_flag = 1;
 }
 
 /*
@@ -194,44 +205,40 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
         return {0, 0, 0};
     }
 
-    float closest_intersection_t;
-    int intersected_sphere;
-    std::tie(closest_intersection_t, intersected_sphere) = closestIntersection(r, inputImage);
-    if( closest_intersection_t < 0)
+    Intersection intersection;
+    closestIntersection(r, intersection, inputImage);
+
+    if( intersection.no_intersect_flag)
     {
-        // no intersection
         return {inputImage.back_r, inputImage.back_g, inputImage.back_b};
     }
 
-    // Intersects at this point
-    glm::vec3 P = r.at(closest_intersection_t);
-
     // ambient - Ka * Ia[c] * O[c]
-    glm::vec3 c_local = glm::vec3(inputImage.spheres[intersected_sphere].ka * inputImage.ambient_ir * inputImage.spheres[intersected_sphere].r,
-                                  inputImage.spheres[intersected_sphere].ka * inputImage.ambient_ig * inputImage.spheres[intersected_sphere].g,
-                                  inputImage.spheres[intersected_sphere].ka * inputImage.ambient_ib * inputImage.spheres[intersected_sphere].b);
+    glm::vec3 c_local = glm::vec3(intersection.sphere.ka * inputImage.ambient_ir * intersection.sphere.r,
+                                  intersection.sphere.ka * inputImage.ambient_ig * intersection.sphere.g,
+                                  intersection.sphere.ka * inputImage.ambient_ib * intersection.sphere.b);
 
     for(int i = 0; i < inputImage.lights.size(); i++)
     {
         Light light = inputImage.lights[i];
 
         // TODO think about these
-        glm::vec3 N = glm::normalize(-P);
-        glm::vec3 L = glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - P);
-        glm::vec3 V = glm::normalize    (P - r.get_origin());
+        glm::vec3 N = glm::normalize(intersection.normal);
+        glm::vec3 L = glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - intersection.point);
+        glm::vec3 V = glm::normalize(intersection.point - r.get_origin());
         glm::vec3 R = glm::normalize(2 * glm::dot(N, L) * N - L);
 
         float huh = glm::dot(N, L);
 
         // diffuse : Kd * Ip[c] * (N dot L) *O[c]
-        glm::vec3 diffuse = glm::vec3(inputImage.spheres[intersected_sphere].kd * light.ir * glm::dot(N, L) * inputImage.spheres[intersected_sphere].r,
-                            inputImage.spheres[intersected_sphere].kd * light.ig * glm::dot(N, L) * inputImage.spheres[intersected_sphere].g ,
-                            inputImage.spheres[intersected_sphere].kd * light.ib * glm::dot(N, L) * inputImage.spheres[intersected_sphere].b );
+        glm::vec3 diffuse = glm::vec3(intersection.sphere.kd * light.ir * glm::dot(N, L) * intersection.sphere.r,
+                                      intersection.sphere.kd * light.ig * glm::dot(N, L) * intersection.sphere.g ,
+                                      intersection.sphere.kd * light.ib * glm::dot(N, L) * intersection.sphere.b );
 
         // specular - Ks*Ip[c]*(R dot V)n
-        glm::vec3 specular = glm::vec3(inputImage.spheres[intersected_sphere].ks * light.ir * glm::pow(glm::dot(R, V), inputImage.spheres[intersected_sphere].n),
-                             inputImage.spheres[intersected_sphere].ks * light.ig * inputImage.spheres[intersected_sphere].g * glm::pow(glm::dot(R, V), inputImage.spheres[intersected_sphere].n),
-                             inputImage.spheres[intersected_sphere].ks * light.ib * inputImage.spheres[intersected_sphere].b * glm::pow(glm::dot(R, V), inputImage.spheres[intersected_sphere].n));
+        glm::vec3 specular = glm::vec3(intersection.sphere.ks * light.ir * glm::pow(glm::dot(R, V), intersection.sphere.n),
+                                       intersection.sphere.ks * light.ig * intersection.sphere.g * glm::pow(glm::dot(R, V), intersection.sphere.n),
+                                       intersection.sphere.ks * light.ib * intersection.sphere.b * glm::pow(glm::dot(R, V), intersection.sphere.n));
 
         c_local += diffuse + specular;
     }
