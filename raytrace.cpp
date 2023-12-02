@@ -3,147 +3,14 @@
 #include <tuple>
 #include "raytrace.h"
 #include "ray.h"
-
-
-#include "external/glm/glm/glm.hpp"
-//#include "external/glm/glm/gtc/matrix_transform.hpp"
-
-void save_imageP3(int Width, int Height, char* fname,unsigned char* pixels)
-{
-    FILE *fp;
-    const int maxVal=255;
-
-    printf("Saving image %s: %d x %d\n", fname,Width,Height);
-    fp = fopen(fname,"w");
-    if (!fp) {
-        printf("Unable to open file '%s'\n",fname);
-        return;
-    }
-    fprintf(fp, "P3\n");
-    fprintf(fp, "%d %d\n", Width, Height);
-    fprintf(fp, "%d\n", maxVal);
-
-    int k = 0 ;
-    for(int j = 0; j < Height; j++) {
-
-        for( int i = 0 ; i < Width; i++)
-        {
-            fprintf(fp," %d %d %d", pixels[k],pixels[k+1],pixels[k+2]) ;
-            k = k + 3 ;
-        }
-        fprintf(fp,"\n") ;
-    }
-    fclose(fp);
-}
-
-/*
- * file_name is argv[1] from main, we want to pass by reference and promise not to modify it, hence the const and &
- * input_image is the struct we want to fill with the information from the input file
- */
-void getImageInfo(const std::string& file_name, ImageInfo& input_image)
-{
-    std::ifstream inputFile(file_name);
-
-    if (!inputFile.is_open())
-    {
-        std::cerr << "Failed to open the input file." << std::endl;
-        exit(1);
-    }
-
-    std::string keyword;
-    int value;
-    while(inputFile >> keyword)
-    {
-        if(keyword == "NEAR")
-        {
-            inputFile >> input_image.near;
-        }
-        if(keyword == "LEFT")
-        {
-            inputFile >> input_image.left;
-        }
-        if(keyword == "RIGHT")
-        {
-            inputFile >> input_image.right;
-        }
-        if(keyword == "BOTTOM")
-        {
-            inputFile >> input_image.bottom;
-        }
-        if(keyword == "TOP")
-        {
-            inputFile >> input_image.top;
-        }
-        if(keyword == "RES")
-        {
-            inputFile >> input_image.width;
-            inputFile >> input_image.height;
-        }
-        if(keyword == "SPHERE")
-        {
-            Sphere sphere;
-            inputFile >> sphere.name >> sphere.posX >> sphere.posY >> sphere.posZ
-                      >> sphere.scaleX >> sphere.scaleY >> sphere.scaleZ
-                      >> sphere.r >> sphere.g >> sphere.b
-                      >> sphere.ka >> sphere.kd >> sphere.ks >> sphere.kr >> sphere.n;
-            sphere.initDefaults();
-            input_image.spheres.push_back(sphere);
-        }
-        if(keyword == "LIGHT")
-        {
-            Light light;
-            inputFile >> light.name >> light.posX >> light.posY >> light.posZ
-                      >> light.ir >> light.ig >> light.ib;
-            input_image.lights.push_back(light);
-        }
-        if(keyword == "BACK")
-        {
-            inputFile >> input_image.back_r >> input_image.back_g >> input_image.back_b;
-        }
-        if(keyword == "AMBIENT")
-        {
-            inputFile >> input_image.ambient_ir >> input_image.ambient_ig >> input_image.ambient_ib;
-        }
-        if(keyword == "OUTPUT")
-        {
-            inputFile >> input_image.output;
-        }
-    }
-    inputFile.close();
-}
-
-glm::mat4 inverseTranslate(float x, float y, float z)
-{
-    glm::mat4 inverseTranslateMatrix = glm::mat4(0);
-    inverseTranslateMatrix[0][0] = 1;
-    inverseTranslateMatrix[1][1] = 1;
-    inverseTranslateMatrix[2][2] = 1;
-    inverseTranslateMatrix[3][3] = 1;
-    inverseTranslateMatrix[3][0] = -x;
-    inverseTranslateMatrix[3][1] = -y;
-    inverseTranslateMatrix[3][2] = -z;
-
-    return inverseTranslateMatrix;
-}
-
-glm::mat4 inverseScale(float x, float y, float z)
-{
-    glm::mat4 inverseScaleMatrix = glm::mat4(0);
-    inverseScaleMatrix[0][0] = 1 / x;
-    inverseScaleMatrix[1][1] = 1 / y;
-    inverseScaleMatrix[2][2] = 1 / z;
-    inverseScaleMatrix[3][3] = 1;
-
-    return inverseScaleMatrix;
-}
+#include "matrix_ops.h"
+#include "file_processing.h"
 
 // returns the t value of the closest intersection, or -1 if there is no intersection
 void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &inputImage)
 {
     glm::vec3 S = r.get_origin();
     glm::vec3 c = r.get_direction();
-
-    float t = -1;
 
     for(int i = 0; i < inputImage.spheres.size(); i++)
     {
@@ -157,6 +24,7 @@ void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &in
         glm::vec4 c_t_homo = inverse_scale * inverse_translate * c_homo;
         glm::vec3 S_t = glm::vec3(S_t_homo.x, S_t_homo.y, S_t_homo.z);
         glm::vec3 c_t = glm::vec3(c_t_homo.x, c_t_homo.y, c_t_homo.z);
+        Ray r_t = Ray(S_t, c_t, 1);
 
         float A = glm::dot(c_t, c_t);
         float B = glm::dot(c_t, S_t);
@@ -166,23 +34,30 @@ void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &in
 
         if (discriminant > 0)
         {
-            float t1 = (-B + sqrt(discriminant)) / (2 * A);
-            float t2 = (-B - sqrt(discriminant)) / (2 * A);
+            float t1 = ((-B/A) + (sqrt(discriminant)/A));
+            float t2 = ((-B/A) - (sqrt(discriminant)/A));
 
-            intersection.sphere = inputImage.spheres[i];
-            intersection.t = std::min(t1, t2);
+            float t_candidate = std::min(t1, t2);
+            if(t_candidate < 1) t_candidate = std::max(t1, t2);
 
-            intersection.no_intersect_flag = 0;
-            intersection.point = r.at(intersection.t);
+            if(t_candidate >= 1)
+            {
+                intersection.sphere = inputImage.spheres[i];
+                intersection.t = t_candidate;
 
-            glm::vec3 normal = intersection.point - glm::vec3(intersection.sphere.posX, intersection.sphere.posY, intersection.sphere.posZ);
-            glm::vec4 normal_homo = glm::transpose(inverse_scale * inverse_translate) * glm::vec4(normal, 0);
-            intersection.normal = glm::vec3(normal_homo.x, normal_homo.y, normal_homo.z);
+                intersection.no_intersect_flag = 0;
 
-            return;
+                // TODO - this gives me the correct answer but I dont understand why I don't need to transform it first
+                intersection.point = r.at(intersection.t);
+
+                glm::vec3 normal = r_t.at(intersection.t);
+                glm::vec4 normal_homo = glm::transpose( inverse_scale * inverse_translate) * glm::vec4(normal, 0);
+                intersection.normal = glm::normalize(glm::vec3(normal_homo.x, normal_homo.y, normal_homo.z));
+
+                return;
+            }
         }
     }
-    // TODO is this good practice? Only setting this flag, and trusting the other function to not access the other members
     intersection.no_intersect_flag = 1;
 }
 
@@ -222,13 +97,10 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
     {
         Light light = inputImage.lights[i];
 
-        // TODO think about these
         glm::vec3 N = glm::normalize(intersection.normal);
         glm::vec3 L = glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - intersection.point);
         glm::vec3 V = glm::normalize(intersection.point - r.get_origin());
         glm::vec3 R = glm::normalize(2 * glm::dot(N, L) * N - L);
-
-        float huh = glm::dot(N, L);
 
         // diffuse : Kd * Ip[c] * (N dot L) *O[c]
         glm::vec3 diffuse = glm::vec3(intersection.sphere.kd * light.ir * glm::dot(N, L) * intersection.sphere.r,
@@ -237,8 +109,8 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
 
         // specular - Ks*Ip[c]*(R dot V)n
         glm::vec3 specular = glm::vec3(intersection.sphere.ks * light.ir * glm::pow(glm::dot(R, V), intersection.sphere.n),
-                                       intersection.sphere.ks * light.ig * intersection.sphere.g * glm::pow(glm::dot(R, V), intersection.sphere.n),
-                                       intersection.sphere.ks * light.ib * intersection.sphere.b * glm::pow(glm::dot(R, V), intersection.sphere.n));
+                                       intersection.sphere.ks * light.ig * glm::pow(glm::dot(R, V), intersection.sphere.n),
+                                       intersection.sphere.ks * light.ib * glm::pow(glm::dot(R, V), intersection.sphere.n));
 
         c_local += diffuse + specular;
     }
