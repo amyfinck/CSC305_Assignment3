@@ -1,7 +1,3 @@
-//
-// Created by Amy Finck on 2023-11-11.
-//
-
 #ifndef ASSIGNMENT3_RAYTRACE_H
 #define ASSIGNMENT3_RAYTRACE_H
 

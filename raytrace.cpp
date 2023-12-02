@@ -6,6 +6,42 @@
 #include "matrix_ops.h"
 #include "file_processing.h"
 
+bool shadowRay(Intersection& intersection, Light& light, const Sphere& sphere)
+{
+    Ray shadow_ray = Ray(intersection.point, glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - intersection.point));
+
+    glm::mat4 inverse_translate = inverseTranslate(sphere.posX, sphere.posY, sphere.posZ);
+    glm::mat4 inverse_scale = inverseScale(sphere.scaleX, sphere.scaleY, sphere.scaleZ);
+
+    glm::vec4 S_homo = glm::vec4(shadow_ray.get_origin(), 1);
+    glm::vec4 c_homo = glm::vec4(shadow_ray.get_direction(), 0);
+    glm::vec4 S_t_homo = inverse_scale * inverse_translate * S_homo;
+    glm::vec4 c_t_homo = inverse_scale * inverse_translate * c_homo;
+    glm::vec3 S_t = glm::vec3(S_t_homo.x, S_t_homo.y, S_t_homo.z);
+    glm::vec3 c_t = glm::vec3(c_t_homo.x, c_t_homo.y, c_t_homo.z);
+    Ray shadow_ray_t = Ray(S_t, c_t);
+
+    float A = glm::dot(c_t, c_t);
+    float B = glm::dot(c_t, S_t);
+    float C = glm::dot(S_t, S_t) - 1;
+
+    float discriminant = B * B - A * C;
+
+    if (discriminant > 0)
+    {
+        float t1 = ((-B/A) + (sqrt(discriminant)/A));
+        float t2 = ((-B/A) - (sqrt(discriminant)/A));
+
+        if(t1 > 0.0001 || t2 > 0.0001)
+        {
+            return true;
+        }
+        return false;
+    }
+
+    return false;
+}
+
 // returns the t value of the closest intersection, or -1 if there is no intersection
 void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &inputImage)
 {
@@ -27,7 +63,7 @@ void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &in
         glm::vec4 c_t_homo = inverse_scale * inverse_translate * c_homo;
         glm::vec3 S_t = glm::vec3(S_t_homo.x, S_t_homo.y, S_t_homo.z);
         glm::vec3 c_t = glm::vec3(c_t_homo.x, c_t_homo.y, c_t_homo.z);
-        Ray r_t = Ray(S_t, c_t, 1);
+        Ray r_t = Ray(S_t, c_t);
 
         float A = glm::dot(c_t, c_t);
         float B = glm::dot(c_t, S_t);
@@ -106,23 +142,41 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
     {
         Light light = inputImage.lights[i];
 
-        glm::vec3 N = glm::normalize(intersection.normal);
-        glm::vec3 L = glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - intersection.point);
-        glm::vec3 V = glm::normalize(intersection.point - r.get_origin());
-        glm::vec3 R = glm::normalize(2 * glm::dot(N, L) * N - L);
+        bool is_in_shadow = false;
+        for(int s = 0; s < inputImage.spheres.size(); s++)
+        {
+            if(shadowRay(intersection, light, inputImage.spheres[s]))
+            {
+                is_in_shadow = true;
+            }
+        }
 
-        // diffuse : Kd * Ip[c] * (N dot L) *O[c]
-        glm::vec3 diffuse = glm::vec3(intersection.sphere.kd * light.ir * glm::dot(N, L) * intersection.sphere.r,
-                                      intersection.sphere.kd * light.ig * glm::dot(N, L) * intersection.sphere.g ,
-                                      intersection.sphere.kd * light.ib * glm::dot(N, L) * intersection.sphere.b );
+        if(!is_in_shadow)
+        {
+            glm::vec3 N = glm::normalize(intersection.normal);
+            glm::vec3 L = glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - intersection.point);
 
-        // specular - Ks*Ip[c]*(R dot V)n
-        glm::vec3 specular = glm::vec3(intersection.sphere.ks * light.ir * glm::pow(glm::dot(R, V), intersection.sphere.n),
-                                       intersection.sphere.ks * light.ig * glm::pow(glm::dot(R, V), intersection.sphere.n),
-                                       intersection.sphere.ks * light.ib * glm::pow(glm::dot(R, V), intersection.sphere.n));
+            glm::vec3 V = glm::normalize(r.get_origin() - intersection.point);
+            glm::vec3 R = glm::normalize(2 * glm::dot(N, L) * N - L);
 
-        c_local += diffuse + specular;
+            // diffuse : Kd * Ip[c] * (N dot L) *O[c]
+            glm::vec3 diffuse = glm::vec3(intersection.sphere.kd * light.ir * glm::dot(N, L) * intersection.sphere.r,
+                                          intersection.sphere.kd * light.ig * glm::dot(N, L) * intersection.sphere.g,
+                                          intersection.sphere.kd * light.ib * glm::dot(N, L) * intersection.sphere.b);
+
+            // specular - Ks*Ip[c]*(R dot V)n
+            glm::vec3 specular = glm::vec3(
+                    intersection.sphere.ks * light.ir * glm::pow(glm::dot(R, V), intersection.sphere.n),
+                    intersection.sphere.ks * light.ig * glm::pow(glm::dot(R, V), intersection.sphere.n),
+                    intersection.sphere.ks * light.ib * glm::pow(glm::dot(R, V), intersection.sphere.n));
+
+            c_local += diffuse + specular;
+        }
     }
+
+    if(c_local.x > 1) c_local.x = 1;
+    if(c_local.y > 1) c_local.y = 1;
+    if(c_local.z > 1) c_local.z = 1;
 
     return c_local;
 }
@@ -175,7 +229,7 @@ int main(int argc, char *argv[])
             // TODO textbook also gives this in camera coordinates, what should I use
             glm::vec3 ray_direction = P_pixel_world - eye;
 
-            Ray myRay = Ray(eye, ray_direction, 1);
+            Ray myRay = Ray(eye, ray_direction);
 
             glm::vec3 color = raytrace(myRay, input_image, 1);
 

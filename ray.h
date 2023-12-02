@@ -7,11 +7,10 @@
 class Ray
 {
     public:
-        Ray(const glm::vec3& o, const glm::vec3& dir, int dep)
+        Ray(const glm::vec3& o, const glm::vec3& dir)
         {
             origin = o;
             direction = dir;
-            depth = dep;
         }
 
         glm::vec3 get_origin() const
@@ -24,25 +23,14 @@ class Ray
             return direction;
         }
 
-        int get_depth()
-        {
-            return depth;
-        }
-
-        void set_depth(int dep)
-        {
-            depth = dep;
-        }
-
         glm::vec3 at(float t) const
         {
             return origin + t * direction;
         }
 
     private:
-        glm::vec3 origin;
-        glm::vec3 direction;
-        int depth;
+        glm::vec3 origin{};
+        glm::vec3 direction{};
 };
 
 #endif //ASSIGNMENT3_RAY_H
