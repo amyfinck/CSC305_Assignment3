@@ -12,14 +12,17 @@ void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &in
     glm::vec3 S = r.get_origin();
     glm::vec3 c = r.get_direction();
 
+    intersection.no_intersect_flag = 1;
+
     for(int i = 0; i < inputImage.spheres.size(); i++)
     {
         Sphere sphere = inputImage.spheres[i];
-        glm::vec4 S_homo = glm::vec4(r.get_origin(), 1);
-        glm::vec4 c_homo = glm::vec4(r.get_direction(), 0);
 
         glm::mat4 inverse_translate = inverseTranslate(sphere.posX, sphere.posY, sphere.posZ);
         glm::mat4 inverse_scale = inverseScale(sphere.scaleX, sphere.scaleY, sphere.scaleZ);
+
+        glm::vec4 S_homo = glm::vec4(r.get_origin(), 1);
+        glm::vec4 c_homo = glm::vec4(r.get_direction(), 0);
         glm::vec4 S_t_homo = inverse_scale * inverse_translate * S_homo;
         glm::vec4 c_t_homo = inverse_scale * inverse_translate * c_homo;
         glm::vec3 S_t = glm::vec3(S_t_homo.x, S_t_homo.y, S_t_homo.z);
@@ -37,28 +40,34 @@ void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &in
             float t1 = ((-B/A) + (sqrt(discriminant)/A));
             float t2 = ((-B/A) - (sqrt(discriminant)/A));
 
-            float t_candidate = std::min(t1, t2);
-            if(t_candidate < 1) t_candidate = std::max(t1, t2);
-
-            if(t_candidate >= 1)
+            if(r.at(t1).z <= -1)
             {
-                intersection.sphere = inputImage.spheres[i];
-                intersection.t = t_candidate;
-
-                intersection.no_intersect_flag = 0;
-
-                // TODO - this gives me the correct answer but I dont understand why I don't need to transform it first
-                intersection.point = r.at(intersection.t);
-
-                glm::vec3 normal = r_t.at(intersection.t);
-                glm::vec4 normal_homo = glm::transpose( inverse_scale * inverse_translate) * glm::vec4(normal, 0);
-                intersection.normal = glm::normalize(glm::vec3(normal_homo.x, normal_homo.y, normal_homo.z));
-
-                return;
+                if(intersection.no_intersect_flag || r.at(t1).z > intersection.point.z)
+                {
+                    intersection.t = t1;
+                    intersection.sphere = inputImage.spheres[i];
+                    intersection.point = r.at(intersection.t);
+                    glm::vec3 normal = r_t.at(intersection.t);
+                    glm::vec4 normal_homo = glm::transpose( inverse_scale * inverse_translate) * glm::vec4(normal, 0);
+                    intersection.normal = glm::normalize(glm::vec3(normal_homo.x, normal_homo.y, normal_homo.z));
+                    if(intersection.no_intersect_flag) intersection.no_intersect_flag = 0;
+                }
+            }
+            if(r.at(t2).z <= -1)
+            {
+                if(intersection.no_intersect_flag || r.at(t2).z > intersection.point.z)
+                {
+                    intersection.t = t2;
+                    intersection.sphere = inputImage.spheres[i];
+                    intersection.point = r.at(intersection.t);
+                    glm::vec3 normal = r_t.at(intersection.t);
+                    glm::vec4 normal_homo = glm::transpose( inverse_scale * inverse_translate) * glm::vec4(normal, 0);
+                    intersection.normal = glm::normalize(glm::vec3(normal_homo.x, normal_homo.y, normal_homo.z));
+                    if(intersection.no_intersect_flag) intersection.no_intersect_flag = 0;
+                }
             }
         }
     }
-    intersection.no_intersect_flag = 1;
 }
 
 /*
