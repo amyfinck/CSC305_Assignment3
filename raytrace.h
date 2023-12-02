@@ -12,7 +12,7 @@
 #include "external/glm/glm/mat4x4.hpp"
 
 
-#define MAX_DEPTH 5
+#define MAX_DEPTH 3
 
 void save_imageP6(int Width, int Height, char* fname,unsigned char* pixels);
 

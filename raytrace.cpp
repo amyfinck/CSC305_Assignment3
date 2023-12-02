@@ -42,7 +42,6 @@ bool shadowRay(Intersection& intersection, Light& light, const Sphere& sphere)
     return false;
 }
 
-// returns the t value of the closest intersection, or -1 if there is no intersection
 void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &inputImage)
 {
     glm::vec3 S = r.get_origin();
@@ -76,7 +75,7 @@ void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &in
             float t1 = ((-B/A) + (sqrt(discriminant)/A));
             float t2 = ((-B/A) - (sqrt(discriminant)/A));
 
-            if(r.at(t1).z <= -1)
+            if(r.at(t1).z <= -1 && t1 > 0.0001)
             {
                 if(intersection.no_intersect_flag || r.at(t1).z > intersection.point.z)
                 {
@@ -89,7 +88,7 @@ void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &in
                     if(intersection.no_intersect_flag) intersection.no_intersect_flag = 0;
                 }
             }
-            if(r.at(t2).z <= -1)
+            if(r.at(t2).z <= -1 && t2 > 0.0001)
             {
                 if(intersection.no_intersect_flag || r.at(t2).z > intersection.point.z)
                 {
@@ -130,13 +129,24 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
 
     if( intersection.no_intersect_flag)
     {
-        return {inputImage.back_r, inputImage.back_g, inputImage.back_b};
+        if(depth == 1)
+        {
+            return {inputImage.back_r, inputImage.back_g, inputImage.back_b};
+        }
+        else
+        {
+            return {0, 0, 0};
+        }
     }
 
     // ambient - Ka * Ia[c] * O[c]
     glm::vec3 c_local = glm::vec3(intersection.sphere.ka * inputImage.ambient_ir * intersection.sphere.r,
                                   intersection.sphere.ka * inputImage.ambient_ig * intersection.sphere.g,
                                   intersection.sphere.ka * inputImage.ambient_ib * intersection.sphere.b);
+
+    glm::vec3 diffuse = glm::vec3(0, 0, 0);
+    glm::vec3 specular = glm::vec3(0, 0, 0);
+    glm::vec3 reflected = glm::vec3(0, 0, 0);
 
     for(int i = 0; i < inputImage.lights.size(); i++)
     {
@@ -160,17 +170,25 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
             glm::vec3 R = glm::normalize(2 * glm::dot(N, L) * N - L);
 
             // diffuse : Kd * Ip[c] * (N dot L) *O[c]
-            glm::vec3 diffuse = glm::vec3(intersection.sphere.kd * light.ir * glm::dot(N, L) * intersection.sphere.r,
+            diffuse = glm::vec3(intersection.sphere.kd * light.ir * glm::dot(N, L) * intersection.sphere.r,
                                           intersection.sphere.kd * light.ig * glm::dot(N, L) * intersection.sphere.g,
                                           intersection.sphere.kd * light.ib * glm::dot(N, L) * intersection.sphere.b);
 
             // specular - Ks*Ip[c]*(R dot V)n
-            glm::vec3 specular = glm::vec3(
+            specular = glm::vec3(
                     intersection.sphere.ks * light.ir * glm::pow(glm::dot(R, V), intersection.sphere.n),
                     intersection.sphere.ks * light.ig * glm::pow(glm::dot(R, V), intersection.sphere.n),
                     intersection.sphere.ks * light.ib * glm::pow(glm::dot(R, V), intersection.sphere.n));
 
-            c_local += diffuse + specular;
+            Ray reflection_ray = Ray(intersection.point, R);
+            if(intersection.sphere.kr != 0)
+            {
+                reflected += intersection.sphere.kr * raytrace(reflection_ray, inputImage, depth + 1);
+                if(reflected.x > 1) reflected.x = 1;
+                if(reflected.y > 1) reflected.y = 1;
+                if(reflected.z > 1) reflected.z = 1;
+            }
+            c_local += diffuse + specular + reflected;
         }
     }
 
