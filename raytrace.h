@@ -113,6 +113,7 @@ struct Intersection
     glm::vec3 point;
     Sphere sphere;
     int no_intersect_flag;
+    int concave_flag;
 };
 
 #endif //ASSIGNMENT3_RAYTRACE_H

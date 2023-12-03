@@ -8,6 +8,7 @@
 
 bool shadowRay(Intersection& intersection, Light& light, const Sphere& sphere)
 {
+    // ray from intersection point to light
     Ray shadow_ray = Ray(intersection.point, glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - intersection.point));
 
     glm::mat4 inverse_translate = inverseTranslate(sphere.posX, sphere.posY, sphere.posZ);
@@ -32,13 +33,25 @@ bool shadowRay(Intersection& intersection, Light& light, const Sphere& sphere)
         float t1 = ((-B/A) + (sqrt(discriminant)/A));
         float t2 = ((-B/A) - (sqrt(discriminant)/A));
 
-        if(t1 > 0.0001 || t2 > 0.0001)
+        if(intersection.concave_flag && (intersection.point.z > light.posZ))
         {
             return true;
         }
-        return false;
-    }
 
+        if( (t1 > 0.0001 && (shadow_ray.at(t1).z) < -1 ) || (t2 > 0.0001 && (shadow_ray.at(t2).z < -1) ))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isLightBehind(Intersection& intersection, Light& light)
+{
+    if(intersection.concave_flag == 1 && intersection.point.z > light.posZ)
+    {
+        return true;
+    }
     return false;
 }
 
@@ -72,33 +85,60 @@ void closestIntersection(Ray& r, Intersection& intersection, const ImageInfo &in
 
         if (discriminant > 0)
         {
-            float t1 = ((-B/A) + (sqrt(discriminant)/A));
-            float t2 = ((-B/A) - (sqrt(discriminant)/A));
+            /*
+             * Case 1: no hits
+             *
+             * Case 2: t1 is negative, and t2 is positive
+             * This happens when the image plane intersects the sphere, so it will be concave
+             *
+             * Case 3: t1 and t2 are both positive
+             * t1 will be the closest one, and sphere will convex
+             *
+             * So if t_close is positive, we do not need to check whether t_far is also positive
+             */
 
-            if(r.at(t1).z <= -1 && t1 > 0.0001)
+            float t_close = ((-B/A) - (sqrt(discriminant)/A));
+            float t_far = ((-B/A) + (sqrt(discriminant)/A));
+
+            /*
+             * The rays stemming from the eye originate at their pixels, so all rays stem from their first valid intersection point
+             */
+            if(t_close > 0.0001)
             {
-                if(intersection.no_intersect_flag || r.at(t1).z > intersection.point.z)
+                // If t_close is positive, then both intersections are positive but t_close is closer
+                if(intersection.no_intersect_flag || r.at(t_close).z > intersection.point.z )
                 {
-                    intersection.t = t1;
+                    intersection.t = t_close;
                     intersection.sphere = inputImage.spheres[i];
                     intersection.point = r.at(intersection.t);
+
+                    /* the sphere has been transformed to be size one at the origin, so the normal is the point of
+                     * intersection - (0, 0, 0).
+                     *
+                     * To convert the normal back to world coordinates, apply the inverse transpose.
+                    */
                     glm::vec3 normal = r_t.at(intersection.t);
                     glm::vec4 normal_homo = glm::transpose( inverse_scale * inverse_translate) * glm::vec4(normal, 0);
                     intersection.normal = glm::normalize(glm::vec3(normal_homo.x, normal_homo.y, normal_homo.z));
-                    if(intersection.no_intersect_flag) intersection.no_intersect_flag = 0;
+                    intersection.concave_flag = 0;
+                    intersection.no_intersect_flag = 0;
                 }
             }
-            if(r.at(t2).z <= -1 && t2 > 0.0001)
+            else if(t_far > 0.0001)
             {
-                if(intersection.no_intersect_flag || r.at(t2).z > intersection.point.z)
+                if(intersection.no_intersect_flag || r.at(t_far).z > intersection.point.z )
                 {
-                    intersection.t = t2;
+                    // if t_close is negative and t_far is positive, then there is an intersection with the near plane
+                    intersection.t = t_far;
                     intersection.sphere = inputImage.spheres[i];
                     intersection.point = r.at(intersection.t);
-                    glm::vec3 normal = r_t.at(intersection.t);
-                    glm::vec4 normal_homo = glm::transpose( inverse_scale * inverse_translate) * glm::vec4(normal, 0);
+
+                    // the normal will be negative because the surface is concave
+                    glm::vec3 normal = -r_t.at(intersection.t);
+                    glm::vec4 normal_homo = glm::transpose(inverse_scale * inverse_translate) * glm::vec4(normal, 0);
                     intersection.normal = glm::normalize(glm::vec3(normal_homo.x, normal_homo.y, normal_homo.z));
-                    if(intersection.no_intersect_flag) intersection.no_intersect_flag = 0;
+                    intersection.concave_flag = 1;
+                    intersection.no_intersect_flag = 0;
                 }
             }
         }
@@ -122,6 +162,11 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
     {
         // return black
         return {0, 0, 0};
+    }
+
+    if(-0.001 < r.get_direction().x && r.get_direction().x < 0.001 && -0.001 < r.get_direction().y && r.get_direction().y < 0.001)
+    {
+        int x = 1;
     }
 
     Intersection intersection;
@@ -161,7 +206,9 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
             }
         }
 
-        if(!is_in_shadow)
+        bool is_light_behind = isLightBehind(intersection, light);
+
+        if(!is_in_shadow && !is_light_behind)
         {
             glm::vec3 N = glm::normalize(intersection.normal);
             glm::vec3 L = glm::normalize(glm::vec3(light.posX, light.posY, light.posZ) - intersection.point);
@@ -184,9 +231,6 @@ glm::vec3 raytrace(Ray& r, const ImageInfo& inputImage, int depth)
             if(intersection.sphere.kr != 0)
             {
                 reflected += intersection.sphere.kr * raytrace(reflection_ray, inputImage, depth + 1);
-                if(reflected.x > 1) reflected.x = 1;
-                if(reflected.y > 1) reflected.y = 1;
-                if(reflected.z > 1) reflected.z = 1;
             }
             c_local += diffuse + specular + reflected;
         }
@@ -247,7 +291,7 @@ int main(int argc, char *argv[])
             // TODO textbook also gives this in camera coordinates, what should I use
             glm::vec3 ray_direction = P_pixel_world - eye;
 
-            Ray myRay = Ray(eye, ray_direction);
+            Ray myRay = Ray(P_pixel_world, ray_direction);
 
             glm::vec3 color = raytrace(myRay, input_image, 1);
 
