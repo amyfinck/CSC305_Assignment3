@@ -1,7 +1,6 @@
 #ifndef ASSIGNMENT3_RAY_H
 #define ASSIGNMENT3_RAY_H
 
-// TODO is this the best way to include this?
 #include "external/glm/glm/glm.hpp"
 
 class Ray

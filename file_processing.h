@@ -43,7 +43,6 @@ void getImageInfo(const std::string& file_name, ImageInfo& input_image)
     }
 
     std::string keyword;
-    int value;
     while(inputFile >> keyword)
     {
         if(keyword == "NEAR")
@@ -78,7 +77,6 @@ void getImageInfo(const std::string& file_name, ImageInfo& input_image)
                       >> sphere.scaleX >> sphere.scaleY >> sphere.scaleZ
                       >> sphere.r >> sphere.g >> sphere.b
                       >> sphere.ka >> sphere.kd >> sphere.ks >> sphere.kr >> sphere.n;
-            sphere.initDefaults();
             input_image.spheres.push_back(sphere);
         }
         if(keyword == "LIGHT")
