@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <tuple>
+#include <vector>
 #include "external/glm/glm.hpp"
 #include "external/glm/gtc/matrix_transform.hpp"
 #include "external/glm/gtc/matrix_inverse.hpp"
