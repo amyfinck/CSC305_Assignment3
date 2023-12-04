@@ -1,7 +1,7 @@
 #ifndef ASSIGNMENT3_RAY_H
 #define ASSIGNMENT3_RAY_H
 
-#include "external/glm/glm/glm.hpp"
+#include "external/glm/glm.hpp"
 
 class Ray
 {

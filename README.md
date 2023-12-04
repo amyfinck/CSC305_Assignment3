@@ -8,6 +8,9 @@ correctly, shadows are rendered correctly, and reflections are rendered correctl
 as a sphere intersecting the image plane, or a light source being inside an intersected sphere. As a result, all of my
 images render as expected and appear identical to the test keys. 
 
+## Libraries
+I used glm for this assignment. It has been directly added in the `/external` directory to avoid installation issues.
+
 ## Usage
 To compile the program, run `make` in the root directory.
 Alternatively, run `g++ -std=c++11 raytrace.cpp -o RayTracer.exe` to compile
